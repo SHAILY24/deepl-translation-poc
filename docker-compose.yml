@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: deepl-backend
+    ports:
+      - "13601:13601"
+    environment:
+      - DEEPL_API_KEY=${DEEPL_API_KEY}
+    restart: always
+    networks:
+      - deepl-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13601/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: deepl-frontend
+    ports:
+      - "13507:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - deepl-network
+
+networks:
+  deepl-network:
+    driver: bridge
