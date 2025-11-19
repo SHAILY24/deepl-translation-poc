@@ -1,0 +1,88 @@
+Hi Zeeshan,
+
+Instead of just talking about past projects, I built you a working version of what you need. You can test it right now:
+
+https://translate.shaily.dev
+
+Source code: https://github.com/SHAILY24/deepl-translation-poc (will push after final cleanup)
+
+Built it in about 2 hours. FastAPI backend, React frontend, deployed on my server with Docker. Has the core stuff - text input, DeepL API integration, real-time translation, error handling, 26 languages.
+
+---
+
+Similar Projects I've Done:
+
+**PureHD API Gateway** (current job - started March 2025)
+
+I built a centralized gateway that handles 15+ vendor APIs - QuickBooks, Stripe, UPS, FedEx, Avalara tax calc, SendGrid, etc. Does 100K+ API calls per day for our B2B e-commerce platform.
+
+Main challenges I ran into:
+
+1. **Token Management** - Different vendors have different token lifetimes (QuickBooks expires every hour, Stripe doesn't expire, others vary). Built an automated refresh service that renews tokens before they expire. Saved the team 72 hours a day of manual work.
+
+2. **Rate Limiting** - Hit QuickBooks's 500 req/min limit when processing bulk orders. Added request queuing with Redis. Now it tracks how close we are to limits and pauses/resumes automatically. Cut failed API calls by 94%.
+
+3. **Timeouts and Failures** - Vendor APIs timeout or return 5xx errors randomly. Implemented retry with exponential backoff (wait 1s, then 2s, then 4s, then fail). Added circuit breakers. Went from 96% uptime to 99.4%.
+
+4. **Debugging** - When something broke it was hard to tell if it was our code, their API, network, or rate limits. Built structured logging with full request/response tracking. Added health checks for each API. Reduced time to fix issues from 38 minutes to 20 minutes average.
+
+Used FastAPI with async httpx (same as this DeepL tool). HashiCorp Vault for credentials. Redis for caching.
+
+**Shelf Bookstore - Stripe Integration**
+
+https://shelf.shaily.dev
+
+Built payment processing with Stripe's API. React + FastAPI.
+
+Challenges:
+
+1. **Duplicate Charges** - Users clicking "Pay" multiple times during slow networks created multiple charges. Fixed with Stripe's idempotency keys - same request = same charge.
+
+2. **Webhook Security** - Initially accepted all webhook POSTs which was a security hole. Added signature verification using Stripe's webhook secret.
+
+3. **Async Payment Flow** - Webhooks arrive after the payment page loads, creating race conditions. Had to implement proper async handling with "processing" states.
+
+4. **Testing** - Used Stripe test mode with test cards (4242...) so I could test without spending money.
+
+---
+
+The DeepL PoC I Built:
+
+Working features:
+- All 26 language pairs
+- Auto-detect source language
+- Error handling for bad keys, quota exceeded, timeouts
+- Character counter
+- Ctrl+Enter shortcut
+- Docker deployment with SSL
+
+The main gotcha with DeepL: if you send `source_lang: "AUTO"` their API errors out. You have to omit source_lang entirely for auto-detection. Took me a few minutes to figure that out.
+
+What's missing (would add in 3-5 day build):
+- Login system
+- Translation history (Postgres)
+- Per-user rate limits
+- Tests
+- Export to CSV
+
+---
+
+Tech choices for the PoC:
+
+FastAPI - async support, automatic validation, built-in API docs
+React + Vite - fast dev experience
+Docker - consistent deployment
+Tailwind - quick UI building
+
+---
+
+Questions:
+
+1. Do you want translation history in a database or just browser localStorage?
+2. How many concurrent users roughly?
+3. Need any DeepL features beyond basic translation? (They have glossaries, document translation, formality settings)
+
+I can start right away. Available 30+ hours/week.
+
+Shaily
+shailysharmawork@gmail.com
