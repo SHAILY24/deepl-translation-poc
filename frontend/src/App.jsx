@@ -6,6 +6,9 @@ const API_URL = import.meta.env.PROD
   : 'http://localhost:13601'
 
 function App() {
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem('deepl_api_key') || ''
+  )
   const [text, setText] = useState('')
   const [sourceLang, setSourceLang] = useState('AUTO')
   const [targetLang, setTargetLang] = useState('ES')
@@ -13,6 +16,15 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [languages, setLanguages] = useState([])
+
+  // Keep the key for browser convenience only (never sent to our server to store)
+  useEffect(() => {
+    if (apiKey) {
+      localStorage.setItem('deepl_api_key', apiKey)
+    } else {
+      localStorage.removeItem('deepl_api_key')
+    }
+  }, [apiKey])
 
   // Fetch supported languages on mount
   useEffect(() => {
@@ -25,6 +37,11 @@ function App() {
   const handleTranslate = async () => {
     if (!text.trim()) {
       setError('Please enter some text to translate')
+      return
+    }
+
+    if (!apiKey.trim()) {
+      setError('Please enter your DeepL API key to translate (free keys end in :fx).')
       return
     }
 
@@ -47,6 +64,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-DeepL-Key': apiKey.trim(),
         },
         body: JSON.stringify(requestBody)
       })
@@ -86,6 +104,39 @@ function App() {
 
         {/* Main Card */}
         <div className="bg-white rounded-lg shadow-xl p-6 md:p-8">
+          {/* API Key (bring your own key) */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Your DeepL API key
+            </label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Paste your DeepL API key (free keys end in :fx)"
+              autoComplete="off"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-800 leading-relaxed">
+                The shared demo key was disabled due to abuse. Enter your own
+                DeepL API key to use this tool (free keys end in :fx). Your key
+                is used only to process your translation and is never stored or
+                logged on the server. It is kept in your browser only for
+                convenience.{' '}
+                <a
+                  href="https://www.deepl.com/pro-api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-700 underline"
+                >
+                  Get a DeepL API key
+                </a>
+                .
+              </p>
+            </div>
+          </div>
+
           {/* Language Selectors */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
@@ -237,7 +288,7 @@ function App() {
               Portfolio
             </a>
             <a
-              href="http://localhost:13601/docs"
+              href="/api/docs"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 hover:text-blue-700"

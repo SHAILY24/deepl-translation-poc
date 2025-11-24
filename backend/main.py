@@ -4,7 +4,7 @@ FastAPI service for translating text using DeepL API
 """
 import os
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
@@ -16,7 +16,12 @@ load_dotenv()
 app = FastAPI(
     title="DeepL Translation API",
     description="Translation service using DeepL API",
-    version="1.0.0"
+    version="1.0.0",
+    # Served under /api so the frontend's existing /api/ nginx proxy exposes
+    # them publicly (the SPA owns the bare /docs path).
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 # CORS configuration - allow frontend origin
@@ -32,13 +37,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Get DeepL API key from environment
-DEEPL_API_KEY = os.getenv("DEEPL_API_KEY")
-if not DEEPL_API_KEY:
-    raise ValueError("DEEPL_API_KEY environment variable is required")
+# Optional fallback DeepL API key from environment (bring-your-own-key model).
+# The shared demo key was disabled due to abuse; visitors normally supply their
+# own key per request. This env value is only used as a fallback if present.
+DEEPL_API_KEY = os.getenv("DEEPL_API_KEY") or None
 
-# DeepL API endpoint (use api-free.deepl.com for free tier)
-DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
+# Friendly message shown when no API key is available at all
+NO_KEY_MESSAGE = (
+    "The shared demo key was disabled due to abuse; please enter your own "
+    "DeepL API key (free keys end in :fx). It is used only to process this "
+    "request and is never stored or logged."
+)
+
+
+def deepl_api_url(api_key: str) -> str:
+    """Select the DeepL endpoint based on the key (free keys end in :fx)."""
+    if api_key.endswith(":fx"):
+        return "https://api-free.deepl.com/v2/translate"
+    return "https://api.deepl.com/v2/translate"
 
 
 class TranslationRequest(BaseModel):
@@ -94,21 +110,32 @@ async def health_check():
     429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
     500: {"model": ErrorResponse, "description": "Internal server error"}
 })
-async def translate_text(request: TranslationRequest):
+async def translate_text(
+    request: TranslationRequest,
+    x_deepl_key: Optional[str] = Header(default=None, alias="X-DeepL-Key"),
+):
     """
-    Translate text using DeepL API
+    Translate text using DeepL API (bring-your-own-key)
 
     - **text**: Text to translate (max 50,000 characters)
     - **source_lang**: Source language code (optional, auto-detect if not provided)
     - **target_lang**: Target language code (required)
+    - **X-DeepL-Key** header: your DeepL API key, used only for this request
     """
-    # Log request for debugging
+    # Log request for debugging (never log the API key or the header)
     print(f"Translation request: source={request.source_lang}, target={request.target_lang}, text_len={len(request.text)}")
+
+    # Resolve effective key: request header takes precedence, env is fallback
+    request_key = x_deepl_key.strip() if x_deepl_key else None
+    effective_key = request_key or DEEPL_API_KEY
+
+    if not effective_key:
+        raise HTTPException(status_code=400, detail=NO_KEY_MESSAGE)
 
     try:
         # Prepare DeepL API request
         data = {
-            "auth_key": DEEPL_API_KEY,
+            "auth_key": effective_key,
             "text": request.text,
             "target_lang": request.target_lang,
         }
@@ -120,20 +147,28 @@ async def translate_text(request: TranslationRequest):
             source = request.source_lang.upper().split("-")[0]
             data["source_lang"] = source
 
-        # Make async request to DeepL API
+        # Make async request to DeepL API (endpoint chosen by the effective key)
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(DEEPL_API_URL, data=data)
+            response = await client.post(deepl_api_url(effective_key), data=data)
 
             # Handle DeepL API errors
-            if response.status_code == 403:
+            if response.status_code in (401, 403):
                 raise HTTPException(
-                    status_code=500,
-                    detail="Invalid DeepL API key. Please check configuration."
+                    status_code=400,
+                    detail=(
+                        "DeepL rejected this API key. Check the key, and note "
+                        "free keys must end in :fx."
+                    )
                 )
             elif response.status_code == 456:
                 raise HTTPException(
                     status_code=429,
-                    detail="DeepL API quota exceeded. Please try again later."
+                    detail="DeepL API quota exceeded for this key. Please try again later."
+                )
+            elif response.status_code == 429:
+                raise HTTPException(
+                    status_code=429,
+                    detail="DeepL rate limit reached for this key. Please slow down and try again."
                 )
             elif response.status_code == 400:
                 error_data = response.json() if response.text else {}
@@ -143,8 +178,8 @@ async def translate_text(request: TranslationRequest):
                 )
             elif response.status_code != 200:
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"DeepL API error: {response.status_code}"
+                    status_code=502,
+                    detail=f"DeepL API error (status {response.status_code}). Please try again later."
                 )
 
             # Parse response
